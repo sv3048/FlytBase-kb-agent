@@ -71,7 +71,7 @@ def _fetch_page_md(url: str) -> str:
     return resp.text
 
 
-def retrieve_docs_context(query: str, top_k_per_site: int = 3) -> str:
+def retrieve_docs_context(query: str, top_k_per_site: int = 2) -> str:
     """
     Live-fetches the most relevant pages from docs.flytbase.com and
     releases.flytbase.com for the given query. Returns a citation-ready
@@ -96,7 +96,7 @@ def retrieve_docs_context(query: str, top_k_per_site: int = 3) -> str:
             except requests.RequestException:
                 continue
             # Trim very long pages to keep the prompt lean
-            trimmed = content[:3000]
+            trimmed = content[:1500]
             sections.append(f"[SOURCE: {entry['url']}]\nTitle: {entry['title']}\n{trimmed}")
 
     return "\n\n".join(sections) if sections else "(no relevant documentation found)"

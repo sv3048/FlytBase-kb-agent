@@ -1,10 +1,6 @@
 """
 Orchestrator: decides which source(s) a question needs, retrieves relevant
 context from each, and generates a grounded, citation-enforced answer.
-
-Routing is done with a cheap keyword heuristic rather than a separate LLM
-call, to keep latency low for the live demo. This is intentionally simple -
-swap in an LLM-based classifier later if time allows.
 """
 
 import sys
@@ -18,13 +14,9 @@ from retrieval.customer_search import (
     get_known_industries,
 )
 from retrieval.docs_search import retrieve_docs_context
+from ingest.parse_corpus import DATA_DIR
 from llm_client import chat_completion
 
-# "tier" removed - it's ambiguous (account tier vs. plan/pricing tier) and
-# was causing customer-only questions to also trigger a needless docs fetch.
-# "feature" removed too - it's in the customer data's own vocabulary
-# (feature_requests), so it was making customer-only questions needlessly
-# fetch docs as well.
 _DOCS_KEYWORDS = {
     "docs", "documentation", "release", "supported", "does flytbase",
     "how do i", "how to", "changelog", "shipped", "available",
@@ -32,6 +24,13 @@ _DOCS_KEYWORDS = {
 }
 
 _AGGREGATE_TRIGGER_WORDS = {"most requested", "most common", "top feature", "most popular"}
+
+_ANSWER_CACHE: dict[tuple, dict] = {}
+
+
+def _corpus_fingerprint() -> tuple:
+    return tuple(sorted((p.name, p.stat().st_mtime) for p in DATA_DIR.glob("*.md")))
+
 
 SYSTEM_PROMPT = """You are a knowledge base agent for a FlytBase Solutions Engineer.
 You answer questions using ONLY the CUSTOMER DATA and PRODUCT DOCS/RELEASE NOTES
@@ -61,7 +60,6 @@ Rules you must follow:
 
 
 def _route(query: str) -> tuple[bool, bool]:
-    """Returns (needs_customer_data, needs_docs). Defaults to both if unsure."""
     q_lower = query.lower()
     needs_docs = any(kw in q_lower for kw in _DOCS_KEYWORDS)
     needs_customer = any(
@@ -69,18 +67,11 @@ def _route(query: str) -> tuple[bool, bool]:
         ["account", "customer", "issue", "ticket", "task", "meeting", "arr", "industry", "tier"]
     )
     if not needs_docs and not needs_customer:
-        # ambiguous - fetch both, cheap insurance for combined questions
         return True, True
     return needs_customer or not needs_docs, needs_docs or not needs_customer
 
 
 def _detect_industry_aggregation(query: str) -> str | None:
-    """
-    If the question asks for "most requested features" (or similar) within
-    a specific industry, returns that industry name so we can run a real
-    computed aggregation instead of letting the LLM eyeball a ranking from
-    a flat list of records.
-    """
     q_lower = query.lower()
     if not any(trigger in q_lower for trigger in _AGGREGATE_TRIGGER_WORDS):
         return None
@@ -91,6 +82,11 @@ def _detect_industry_aggregation(query: str) -> str | None:
 
 
 def answer_question(query: str) -> dict:
+    cache_key = (query.strip().lower(), _corpus_fingerprint())
+    cached = _ANSWER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     needs_customer, needs_docs = _route(query)
 
     context_parts = []
@@ -104,8 +100,8 @@ def answer_question(query: str) -> dict:
             "report these numbers directly, do not recount or re-rank):\n" + agg_result
         )
         sources_used.append("customer_data (aggregated)")
-        needs_customer = False  # avoid also dumping the raw unranked records
-        needs_docs = False  # aggregation questions are customer-only by default
+        needs_customer = False
+        needs_docs = False
 
     if needs_customer:
         customer_ctx = retrieve_customer_context(query)
@@ -122,10 +118,12 @@ def answer_question(query: str) -> dict:
 
     answer_text = chat_completion(SYSTEM_PROMPT, user_message)
 
-    return {
+    result = {
         "answer": answer_text,
         "sources_used": sources_used,
     }
+    _ANSWER_CACHE[cache_key] = result
+    return result
 
 
 if __name__ == "__main__":

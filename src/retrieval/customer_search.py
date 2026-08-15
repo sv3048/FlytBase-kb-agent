@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ingest.parse_corpus import load_all
 
-MAX_RECORDS_PER_TYPE = 25  # cap so a single query never blows the token budget
+MAX_RECORDS_PER_TYPE = 12  # cap so a single query never blows the token budget
 
 _STOPWORDS = {
     "the", "a", "an", "is", "are", "was", "were", "which", "what", "who",

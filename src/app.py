@@ -97,9 +97,10 @@ div[data-testid="stButton"] button:focus:not(:active){
 color:var(--text) !important; box-shadow:none !important;
 }
 .kb-tag{
-font-family:'JetBrains Mono', monospace; font-size:.7rem; color:var(--amber);
+font-family:'JetBrains Mono', monospace; font-size:.68rem; font-weight:500; color:var(--amber);
 background:rgba(255,176,32,0.08); border:1px solid rgba(255,176,32,0.25);
-border-radius:5px; padding:.12rem .4rem; display:inline-block; margin-bottom:.45rem;
+border-radius:5px; padding:.14rem .5rem; display:inline-block; margin-bottom:.5rem;
+text-transform:uppercase; letter-spacing:.06em;
 }
 .kb-tag.teal{ color:var(--teal); background:rgba(45,212,200,0.08); border-color:rgba(45,212,200,0.25); }
 [data-testid="stChatMessage"]{
@@ -119,18 +120,20 @@ padding:.08rem .35rem !important;
 background:var(--bg-panel) !important; border:1px solid var(--border) !important;
 border-radius:12px !important;
 }
-[data-testid="stChatInput"] textarea{ color:var(--text) !important; font-family:'Inter', sans-serif !important; }
+[data-testid="stChatInput"] *{
+background-color:var(--bg-panel) !important;
+}
+[data-testid="stChatInput"] textarea{
+color:var(--text) !important; font-family:'Inter', sans-serif !important;
+}
+[data-testid="stChatInput"] textarea::placeholder{ color:var(--muted) !important; opacity:1 !important; }
+[data-testid="stChatInput"] button svg{ fill:var(--amber) !important; }
 [data-testid="stAlert"]{
 background:var(--bg-panel) !important; border:1px solid rgba(255,176,32,0.35) !important;
 border-radius:10px !important;
 }
 </style>
 """
-# Belt-and-braces: strip any accidental leading whitespace from every line.
-# Markdown treats 4+ leading spaces as a literal code block, which silently
-# turns an entire <style> tag into visible text instead of applied CSS -
-# stripping here guarantees that can never happen regardless of how this
-# string gets edited or re-indented later.
 st.markdown("\n".join(line.strip() for line in _CSS.splitlines()), unsafe_allow_html=True)
 
 st.markdown(
@@ -157,21 +160,17 @@ if "messages" not in st.session_state:
 if "queued_prompt" not in st.session_state:
     st.session_state.queued_prompt = None
 
-# One example question per required demo category (customer-only / docs-only /
-# combined) so a judge can click straight into the exact three-question demo
-# instead of typing them by hand. Each is tagged with the source(s) it will
-# hit, made visible up front rather than only after the answer comes back.
 EXAMPLE_QUESTIONS = [
     (
-        "customer_data",
+        "Customer data",
         "Which accounts are on the enterprise tier and marked at_risk?",
     ),
     (
-        "live_docs",
+        "Live docs",
         "Does FlytBase support scheduled recurring missions?",
     ),
     (
-        "customer_data + live_docs",
+        "Customer data + live docs",
         "Which accounts requested offline mission caching, and does FlytBase "
         "already support it according to the docs?",
     ),
@@ -197,11 +196,20 @@ st.session_state.queued_prompt = None
 
 _CITATION_RE = re.compile(r"\[(?!\s*\])((?:SOURCE:\s*)?[^\[\]]+)\](?!\()")
 
+_SOURCE_LABELS = {
+    "customer_data": "Customer data",
+    "live_docs": "Live docs",
+}
+
+
+def _display_source(key: str) -> str:
+    aggregated = "(aggregated)" in key
+    base = key.replace("(aggregated)", "").strip()
+    label = _SOURCE_LABELS.get(base, base.replace("_", " ").capitalize())
+    return f"{label} · aggregated" if aggregated else label
+
 
 def _style_citations(text: str) -> str:
-    """Wraps [acct-029] / [FEAT-0004] / [SOURCE: url] citations in backticks
-    so they render as monospace amber pills, visually separating grounded
-    facts from prose. Skips real markdown links (never matches "](" )."""
     return _CITATION_RE.sub(lambda m: f"`[{m.group(1)}]`", text)
 
 
@@ -215,19 +223,20 @@ if prompt:
             try:
                 result = answer_question(prompt)
                 answer = _style_citations(result["answer"])
-                sources = " ".join(f"`{s}`" for s in result["sources_used"])
+                sources = " ".join(f"`{_display_source(s)}`" for s in result["sources_used"])
                 sources_note = f"\n\n*Sources consulted:* {sources}"
                 st.markdown(answer + sources_note)
                 st.session_state.messages.append(
                     {"role": "assistant", "content": answer + sources_note}
                 )
             except Exception as e:
-                error_msg = f"Something went wrong: {e}"
+                print(f"[kb-agent] answer_question failed: {e!r}")
+                error_msg = (
+                    "Something went wrong generating that answer. If this is a "
+                    "rate limit, it should resolve shortly - try again in a moment."
+                )
                 st.error(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
-    # If a button was clicked, we need one rerun so the example buttons
-    # disappear (messages list is now non-empty) and st.chat_input is
-    # the only input left, matching the normal typed-message flow.
     if not typed_prompt:
         st.rerun()

@@ -1,0 +1,19 @@
+# Locks the app to a single deliberate visual identity (dark, instrument-
+# panel palette) instead of relying on Streamlit's built-in Light/Dark/System
+# toggle, which changes base widget styling independently of our custom CSS
+# and was causing the chat input to render white in some modes regardless of
+# the CSS overrides in app.py.
+
+[theme]
+base = "dark"
+primaryColor = "#FFB020"
+backgroundColor = "#0A0E14"
+secondaryBackgroundColor = "#121822"
+textColor = "#E8EDF4"
+font = "sans serif"
+
+[client]
+# Hides the hamburger menu (which is where the Light/Dark/System switcher
+# lives) so the locked theme can't be toggled away from mid-demo. "Deploy"
+# button from local dev is unaffected.
+toolbarMode = "minimal"
